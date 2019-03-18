@@ -39,25 +39,40 @@ class LetsEncryptAuthorization
 	 * Work on challenges
 	 *
 	 * @param array $jwsJwk JWS jwk object
+	 * @param string $dryRun Should we skip actually implementing the challenge?
 	 *
+	 * @return string|null Challenge URL attempted if any are attempted
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function workOnChallenges($jwsJwk)
+	public function workOnChallenges($jwsJwk, $dryRun = false)
 	{
 		// Make sure it's pending
 		if ($this->status === 'pending')
 		{
-			// Handle challenges
-			$checks = [];
+			// Handle challenge
 			foreach ($this->challenges as $challenge)
 			{
 				$keyAuthorization = $challenge['token'] . '.' . AcmeV2Utils::base64UrlEncode(hash('sha256', json_encode($jwsJwk), true));
 				if ($challenge['type'] == 'dns-01')
-					$this->workOnDns01Challenge($challenge, $keyAuthorization);
-				else
-					throw new LetsEncryptDNSClientException('Challenge type ' . $challenge['type'] . ' not implemented.');
+				{
+					if (!$dryRun)
+						$this->workOnDns01Challenge($challenge, $keyAuthorization);
+					return $challenge['url'];
+				}
 			}
+
+			// We weren't able to do any of the challenges
+			$challengeTypes = '';
+			foreach ($this->challenges as $challenge)
+			{
+				if ($challengeTypes !== '')
+					$challengeTypes .= ', ';
+				$challengeTypes .= $challenge['type'];
+			}
+			throw new LetsEncryptDNSClientException('Failed to find implemented challenge type in ' . $challengeTypes . '.');
 		}
+
+		return null;
 	}
 
 	/**

@@ -150,7 +150,34 @@ class LetsEncryptDNSClient
 	}
 
 	/**
-	 * Start a new Wildcard SSL request.
+	 * Start a new SSL request.
+	 *
+	 * @param string[] $domains Domain names
+	 *
+	 * @return LetsEncryptOrder Order
+	 * @throws LetsEncryptDNSClientException
+	 */
+	public function startSslOrder(array $domains)
+	{
+		$this->setUpDirectory();
+		$this->loadAccountInfo();
+
+		// Request a certificate
+		$this->log('INFO', 'Requesting certificate.');
+		$order = $this->startNewOrder($this->directory['newOrder'], $domains);
+
+		// Work on authorizations
+		foreach ($order->authorizations as $authUrl)
+		{
+			$authorization = $this->getOrderAuthorization($authUrl);
+			$authorization->workOnChallenges($this->jwsJwk);
+		}
+
+		return $order;
+	}
+
+	/**
+	 * Start a new wildcard SSL request.
 	 *
 	 * @param string $domain Domain name
 	 *
@@ -164,7 +191,7 @@ class LetsEncryptDNSClient
 
 		// Request a certificate
 		$this->log('INFO', 'Requesting certificate.');
-		$order = $this->startNewOrder($this->directory['newOrder'], '*.' . $domain);
+		$order = $this->startNewOrder($this->directory['newOrder'], ['*.' . $domain]);
 
 		// Work on authorizations
 		foreach ($order->authorizations as $authUrl)
@@ -177,7 +204,7 @@ class LetsEncryptDNSClient
 	}
 
 	/**
-	 * Finalized a Wildcard SSL request.
+	 * Finalized a SSL request.
 	 *
 	 * @param LetsEncryptOrder $order Order
 	 * @param string $csr CSR (see createCSR).  Be sure to use *.$domain for the common name.
@@ -185,7 +212,7 @@ class LetsEncryptDNSClient
 	 * @return LetsEncryptOrder Finalized order
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function finalizeWildcardSslOrder(LetsEncryptOrder $order, string $csr)
+	public function finalizeSslOrder(LetsEncryptOrder $order, string $csr)
 	{
 		$this->setUpDirectory();
 		$this->loadAccountInfo();
@@ -275,8 +302,7 @@ class LetsEncryptDNSClient
 		foreach ($order->authorizations as $authUrl)
 		{
 			$authorization = $this->getOrderAuthorization($authUrl);
-			foreach ($authorization->challenges as $challenge)
-				$this->respondToChallenge($challenge['url']);
+			$this->respondToChallenge($authorization->workOnChallenges($this->jwsJwk, true));
 		}
 	}
 
@@ -324,7 +350,7 @@ class LetsEncryptDNSClient
 
 		// Generate CSR and finalize order
 		$csr = $this->createCSR($privateKey, '*.' . $domain, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
-		$order = $this->finalizeWildcardSslOrder($order, $csr);
+		$order = $this->finalizeSslOrder($order, $csr);
 
 		// Wait for certificate
 		while (!$order->isOrderValid())
@@ -388,21 +414,24 @@ class LetsEncryptDNSClient
 	 * Start a new order
 	 *
 	 * @param string $url URL to start a new order
-	 * @param string $domain Domain
+	 * @param string[] $domains Domains
 	 *
 	 * @return LetsEncryptOrder Order
 	 * @throws LetsEncryptDNSClientException
 	 */
-	private function startNewOrder($url, $domain)
+	private function startNewOrder($url, $domains)
 	{
+		$identifiers = [];
+		foreach ($domains as $domain)
+		{
+			$identifiers[] = [
+				'type' => 'dns',
+				'value' => $domain
+			];
+		}
 		$data = [
-			'identifiers' => [
-				[
-					'type' => 'dns',
-					'value' => $domain
-				]
-		 ]
-	 ];
+			'identifiers' => $identifiers
+		];
 		$output = $this->makeJWSKIDCurlRequest($url, $this->getNewNonce(), json_encode($data), [201]);
 
 		// Get order URL
@@ -462,7 +491,7 @@ class LetsEncryptDNSClient
 	 * Create CSR.  See https://en.wikipedia.org/wiki/Certificate_signing_request
 	 *
 	 * @param string $privateKey Private key (See generatePrivateKey)
-	 * @param string $commonName This is fully qualified domain name that you wish to secure
+	 * @param string|string[] $commonName This is fully qualified domain name that you wish to secure.  It can be multiple domains
 	 * @param string|null $country The two-letter ISO code for the country where your organization is located
 	 * @param string|null $stateOrProvinceName This should not be abbreviated e.g. Sussex, Normandy, New Jersey
 	 * @param string|null $localityName City/town name
@@ -472,25 +501,71 @@ class LetsEncryptDNSClient
 	 * @return string CSR
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function createCSR(string $privateKey, string $commonName, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName)
+	public function createCSR(string $privateKey, $commonName, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName)
 	{
+		// Check if there are mulitple domains
+		$sanDomains = [];
+		if (is_array($commonName))
+		{
+			$sanDomains = $commonName;
+			$commonName = reset($sanDomains);
+		}
+
 		$dn = [
 			'commonName' => $commonName
 		];
 		if ($country !== null)
-			$db['countryName'] = $country;
+			$dn['countryName'] = $country;
 		if ($stateOrProvinceName !== null)
-			$db['stateOrProvinceName'] = $stateOrProvinceName;
+			$dn['stateOrProvinceName'] = $stateOrProvinceName;
 		if ($localityName !== null)
-			$db['localityName'] = $localityName;
+			$dn['localityName'] = $localityName;
 		if ($organizationName !== null)
-			$db['organizationName'] = $organizationName;
+			$dn['organizationName'] = $organizationName;
 		if ($organizationalUnitName !== null)
-			$db['organizationalUnitName'] = $organizationalUnitName;
+			$dn['organizationalUnitName'] = $organizationalUnitName;
+
+		// Set up CSR settings
+		$csrSettings = ['digest_alg' => 'sha256'];
+
+		// Set up temporary file for SAN settings
+		$configFile = null;
+		if (count($sanDomains) > 1)
+		{
+			// Set up config file content
+			$sansCsrConfigStr = '';
+			foreach ($sanDomains as $sanDomain)
+			{
+				if ($sansCsrConfigStr !== '')
+					$sansCsrConfigStr .= ',';
+				$sansCsrConfigStr .= 'DNS:' . $sanDomain;
+			}
+
+			// Set up config file
+			$configFile = tmpfile();
+			$meta = stream_get_meta_data($configFile);
+			$csrSettings['config'] = $meta['uri'];
+			$csrSettings['req_extensions'] = 'v3_req';
+
+			// Write config file
+			fputs($configFile, '[req]' . "\n" . 'req_extensions = v3_req' . "\n\n");
+			fputs($configFile, 'distinguished_name = req_distinguished_name' . "\n\n");
+			fputs($configFile, '[req_distinguished_name]' . "\n");
+			fputs($configFile, '[v3_req]' . "\n");
+			fputs($configFile, 'basicConstraints = CA:FALSE' . "\n");
+			fputs($configFile, 'keyUsage = nonRepudiation, digitalSignature, keyEncipherment' . "\n");
+			fputs($configFile, 'subjectAltName = ' . $sansCsrConfigStr . "\n");
+		}
 
 		// Open up private key resource
 		$privateKeyRes = openssl_pkey_get_private($privateKey);
-		$csr = openssl_csr_new($dn, $privateKeyRes, ['digest_alg' => 'sha256']);
+		$csr = openssl_csr_new($dn, $privateKeyRes, $csrSettings);
+
+		// Close config file
+		if ($configFile !== null)
+			fclose($configFile);
+
+		// Check for error
 		if ($csr === false)
 			throw new LetsEncryptDNSClientException('Failed to generate CSR.');
 		openssl_csr_export($csr, $rtn);

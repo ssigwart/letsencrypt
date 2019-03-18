@@ -13,7 +13,8 @@ try
 		$leClient->agreeToTermsOfService();
 
 	// Start order
-	$order = $leClient->startWildcardSslOrder($domain);
+	$domains = [$domain, 'www.' . $domain];
+	$order = $leClient->startSslOrder($domains);
 	$orderUrl = $order->orderUrl;
 
 	// Wait
@@ -39,7 +40,7 @@ try
 	print $privateKey . PHP_EOL . PHP_EOL;
 
 	// Generate CSR and finalize order
-	$csr = $leClient->createCSR($privateKey, '*.' . $domain, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
+	$csr = $leClient->createCSR($privateKey, $domains, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
 	$order = $leClient->finalizeSslOrder($order, $csr);
 
 	// Wait

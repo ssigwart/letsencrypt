@@ -17,7 +17,7 @@ This library implements the `dns-01` challenge type for wildcard domains.
 2. Call `$order = $leClient->getOrder('YOUR_ORDER_URL');`
 3. Optionally call `$order->selfValidateOrderChallenges();`. If this fails, the order will likely be rejected.
 4. Call `$csr = $this->createCSR(...);` to set up certificate signing request.
-5. Call `$order = $this->finalizeWildcardSslOrder($order, $csr);`
+5. Call `$order = $this->finalizeSslOrder($order, $csr);`
 
 ### Set SSL Certificate
 1. Set up `$leClient = \LetsEncryptDNSClient\LetsEncryptDNSClient` as in the initial request.
