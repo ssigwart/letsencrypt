@@ -302,7 +302,10 @@ class LetsEncryptDNSClient
 		foreach ($order->authorizations as $authUrl)
 		{
 			$authorization = $this->getOrderAuthorization($authUrl);
-			$this->respondToChallenge($authorization->workOnChallenges($this->jwsJwk, true));
+			$url = $authorization->workOnChallenges($this->jwsJwk, true);
+			// Respond to challenge if there was one
+			if ($url !== null)
+				$this->respondToChallenge($url);
 		}
 	}
 
