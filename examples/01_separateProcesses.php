@@ -39,7 +39,7 @@ try
 	print $privateKey . PHP_EOL . PHP_EOL;
 
 	// Generate CSR and finalize order
-	$csr = $leClient->createCSR($privateKey, '*.' . $domain, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
+	$csr = $leClient->createCSR($privateKey, [$domain, '*.' . $domain], $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
 	$order = $leClient->finalizeSslOrder($order, $csr);
 
 	// Wait

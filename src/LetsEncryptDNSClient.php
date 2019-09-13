@@ -352,7 +352,7 @@ class LetsEncryptDNSClient
 		$this->selfValidateOrderChallenges($order);
 
 		// Generate CSR and finalize order
-		$csr = $this->createCSR($privateKey, '*.' . $domain, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
+		$csr = $this->createCSR($privateKey, [$domain, '*.' . $domain], $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
 		$order = $this->finalizeSslOrder($order, $csr);
 
 		// Wait for certificate
