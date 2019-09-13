@@ -191,7 +191,7 @@ class LetsEncryptDNSClient
 
 		// Request a certificate
 		$this->log('INFO', 'Requesting certificate.');
-		$order = $this->startNewOrder($this->directory['newOrder'], ['*.' . $domain]);
+		$order = $this->startNewOrder($this->directory['newOrder'], [$domain, '*.' . $domain]);
 
 		// Work on authorizations
 		foreach ($order->authorizations as $authUrl)
