@@ -11,6 +11,9 @@ class Route53DNSProvider implements DNSProviderInterface
 	/** Hosted zone ID */
 	private $hostedZoneId = null;
 
+	/** Records by domain */
+	private $recordsByDomain = null;
+
 	/**
 	 * Constructor
 	 *
@@ -37,6 +40,9 @@ class Route53DNSProvider implements DNSProviderInterface
 	{
 		try
 		{
+			// Add to values we've already tried to add
+			$this->recordsByDomain[$name][] = ['Value' => $value];
+
 			$rdsClient = $this->awsSdk->createRoute53();
 			$rdsClient->changeResourceRecordSets([
 				'ChangeBatch' => [
@@ -45,9 +51,7 @@ class Route53DNSProvider implements DNSProviderInterface
 							'Action' => 'UPSERT',
 							'ResourceRecordSet' => [
 								'Name' => $name,
-								'ResourceRecords' => [
-									['Value' => $value]
-								],
+								'ResourceRecords' => $this->recordsByDomain[$name],
 								'TTL' => $ttl,
 								'Type' => $type
 							]
