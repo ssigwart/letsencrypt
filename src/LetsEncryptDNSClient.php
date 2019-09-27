@@ -644,6 +644,7 @@ class LetsEncryptDNSClient
 
 		// Set method
 		curl_setopt($this->ch, CURLOPT_CUSTOMREQUEST, $method);
+		curl_setopt($this->ch, CURLOPT_NOBODY, $method === 'HEAD');
 
 		// Include headers
 		curl_setopt($this->ch, CURLOPT_HEADER, 1);
