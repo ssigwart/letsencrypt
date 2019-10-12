@@ -1,6 +1,14 @@
 {
 	"name": "ssigwart/letsencryptdns",
 	"license": "MIT",
+	"homepage": "https://github.com/ssigwart/letsencrypt",
+	"description": "PHP Let's Encrypt Wildcard DNS Client (AWS Route53 support)",
+	"keywords": ["acme", "acmev2", "wildcard", "ssl", "letsencrypt", "aws", "route53"],
+	"authors": [
+		{
+			"name": "Stephen Sigwart"
+		}
+	],
 	"autoload": {
 		"psr-4": { "LetsEncryptDNSClient\\": "src/" }
 	},
