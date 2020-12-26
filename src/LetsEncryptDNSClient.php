@@ -258,7 +258,7 @@ class LetsEncryptDNSClient
 
 		// Get certificate
 		$this->log('INFO', 'Certificate URL: ' . $order->certificateUrl);
-		$certificate = $this->makeCurlRequest('GET', $order->certificateUrl, [200]);
+		$certificate = $this->makeJWSKIDCurlRequest($order->certificateUrl, $this->getNewNonce(), '', [200], true);
 		return $certificate;
 	}
 
@@ -319,8 +319,9 @@ class LetsEncryptDNSClient
 	 */
 	public function getOrder(string $orderUrl)
 	{
-		return new LetsEncryptOrder($orderUrl, $this->makeCurlRequestForJson('GET', $orderUrl));
+		return new LetsEncryptOrder($orderUrl, $this->makeJWSKIDCurlRequest($orderUrl, $this->getNewNonce(), '', [200]));
 	}
+
 	/**
 	 * Get a new Wildcard SSL. This performs all the actions by adding sleeps.
 	 *
@@ -378,6 +379,7 @@ class LetsEncryptDNSClient
 	 */
 	private function getNewNonce()
 	{
+		$this->setUpDirectory();
 		$headers = $this->makeCurlRequest('HEAD', $this->directory['newNonce'], [200]);
 		$pos = 0;
 		while (($pos2 = strpos($headers, "\r\n", $pos)) !== false)
@@ -482,11 +484,12 @@ class LetsEncryptDNSClient
 	public function generatePrivateKey(int $bits = 4096)
 	{
 		$res = openssl_pkey_new([
-			'private_key_bits' => 4096,
+			'private_key_bits' => $bits,
 			'private_key_type' => OPENSSL_KEYTYPE_RSA
 		]);
 		openssl_pkey_export($res, $rtn);
-		openssl_pkey_free($res);
+		if (PHP_MAJOR_VERSION < 8)
+			openssl_pkey_free($res);
 		return $rtn;
 	}
 
@@ -572,7 +575,8 @@ class LetsEncryptDNSClient
 		if ($csr === false)
 			throw new LetsEncryptDNSClientException('Failed to generate CSR.');
 		openssl_csr_export($csr, $rtn);
-		openssl_pkey_free($privateKeyRes);
+		if (PHP_MAJOR_VERSION < 8)
+			openssl_pkey_free($privateKeyRes);
 		return $rtn;
 	}
 
@@ -692,7 +696,7 @@ class LetsEncryptDNSClient
 	 */
 	private function makeCurlRequestForJson($method, $url)
 	{
-		return json_decode($this->makeCurlRequest($method, $url, [200]), true);
+		return json_decode($this->makeCurlRequest($method, $url, [200]), true, JSON_THROW_ON_ERROR);
 	}
 
 	/**
@@ -716,7 +720,7 @@ class LetsEncryptDNSClient
 			'url' => $url
 		];
 		$protectedBase64 = AcmeV2Utils::base64UrlEncode(json_encode($header));
-		if (!openssl_sign($protectedBase64 . '.' . $payloadBase64, $signature, $this->jwsPrivateKey, OPENSSL_ALGO_SHA256))
+		if (!openssl_sign($protectedBase64 . '.' . $payloadBase64, $signature, $this->getJWSPrivateKey(), OPENSSL_ALGO_SHA256))
 			throw new LetsEncryptDNSClientException('Failed to generate signature.');
 		$signature = AcmeV2Utils::base64UrlEncode($signature);
 		$postData = json_encode([
@@ -729,7 +733,7 @@ class LetsEncryptDNSClient
 		$headers = ['Content-Type: application/jose+json'];
 		$resp = $this->makeCurlRequest('POST', $url, $allowedHttpCodes, $headers, $postData);
 
-		return json_decode($resp, true);
+		return json_decode($resp, true, JSON_THROW_ON_ERROR);
 	}
 
 	/**
@@ -739,12 +743,14 @@ class LetsEncryptDNSClient
 	 * @param string $nonce Nonce
 	 * @param string $json JSON string
 	 * @param int[] $allowedHttpCodes Allowed HTTP response codes
+	 * @param bool $returnRaw Return the raw response
 	 *
 	 * @return mixed Output (JSON decoded)
 	 * @throws LetsEncryptDNSClientException
 	 */
-	private function makeJWSKIDCurlRequest($url, $nonce, $json, $allowedHttpCodes)
+	private function makeJWSKIDCurlRequest(string $url, string $nonce, string $json, array $allowedHttpCodes, bool $returnRaw = false)
 	{
+		$this->loadAccountInfo();
 		$payloadBase64 = AcmeV2Utils::base64UrlEncode($json);
 		$header = [
 			'alg' => 'RS256',
@@ -753,7 +759,7 @@ class LetsEncryptDNSClient
 			'url' => $url
 		];
 		$protectedBase64 = AcmeV2Utils::base64UrlEncode(json_encode($header));
-		if (!openssl_sign($protectedBase64 . '.' . $payloadBase64, $signature, $this->jwsPrivateKey, OPENSSL_ALGO_SHA256))
+		if (!openssl_sign($protectedBase64 . '.' . $payloadBase64, $signature, $this->getJWSPrivateKey(), OPENSSL_ALGO_SHA256))
 			throw new LetsEncryptDNSClientException('Failed to generate signature.');
 		$signature = AcmeV2Utils::base64UrlEncode($signature);
 		$postData = json_encode([
@@ -766,7 +772,7 @@ class LetsEncryptDNSClient
 		$headers = ['Content-Type: application/jose+json'];
 		$resp = $this->makeCurlRequest('POST', $url, $allowedHttpCodes, $headers, $postData);
 
-		return json_decode($resp, true);
+		return $returnRaw ? $resp : json_decode($resp, true, JSON_THROW_ON_ERROR);
 	}
 
 	/** JWS jwk object */
@@ -808,7 +814,8 @@ class LetsEncryptDNSClient
 				'kty' => 'RSA',
 				'n' => AcmeV2Utils::base64UrlEncode($keyDetails['rsa']['n'])
 			];
-			openssl_pkey_free($res);
+			if (PHP_MAJOR_VERSION < 8)
+				openssl_pkey_free($res);
 		}
 		return $this->jwsPrivateKey;
 	}
