@@ -237,7 +237,7 @@ class LetsEncryptDNSClient
 					throw new LetsEncryptDNSClientException('Order failed to transition to ready status. Currently “' . $order->status . '”.');
 				sleep(5);
 			}
-		} while ($order !== null);
+		} while ($order === null);
 
 		// Finalize
 		$this->log('INFO', 'Finalizing order.');
