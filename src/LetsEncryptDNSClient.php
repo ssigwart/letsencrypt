@@ -224,17 +224,18 @@ class LetsEncryptDNSClient
 		// Get order and make sure it didn't fail
 		$this->log('INFO', 'Looking up order.');
 		$orderReadyAttemptsLeft = 30;
+		$orderUrl = $order->orderUrl;
 		do 
 		{
-			$order = $this->getOrder($order->orderUrl);
+			$order = $this->getOrder($orderUrl);
 			if ($order->didOrderFail() || $order->isOrderExpired())
 				throw new LetsEncryptDNSClientException('Order failed with status “' . $order->status . '”.');
 			else if (!$order->isOrderReady())
 			{
-				$order = null;
 				$orderReadyAttemptsLeft--;
 				if ($orderReadyAttemptsLeft === 0)
 					throw new LetsEncryptDNSClientException('Order failed to transition to ready status. Currently “' . $order->status . '”.');
+				$order = null;
 				sleep(5);
 			}
 		} while ($order === null);
