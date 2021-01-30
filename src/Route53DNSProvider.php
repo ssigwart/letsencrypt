@@ -36,32 +36,53 @@ class Route53DNSProvider implements DNSProviderInterface
 	 *
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function addDnsValue($type, $name, $value, $ttl)
+	public function addDnsValue(string $type, string $name, string $value, int $ttl): void
 	{
+		$addlExceptionInfo = '';
 		try
 		{
 			// Add to values we've already tried to add
 			$this->recordsByDomain[$name][] = ['Value' => $value];
 
 			$rdsClient = $this->awsSdk->createRoute53();
-			$rdsClient->changeResourceRecordSets([
-				'ChangeBatch' => [
-					'Changes' => [
-						[
-							'Action' => 'UPSERT',
-							'ResourceRecordSet' => [
-								'Name' => $name,
-								'ResourceRecords' => $this->recordsByDomain[$name],
-								'TTL' => $ttl,
-								'Type' => $type
+			$successful = false;
+			$attemptsLeft = 10;
+			do
+			{
+				$attemptsLeft--;
+				try
+				{
+					$rdsClient->changeResourceRecordSets([
+						'ChangeBatch' => [
+							'Changes' => [
+								[
+									'Action' => 'UPSERT',
+									'ResourceRecordSet' => [
+										'Name' => $name,
+										'ResourceRecords' => $this->recordsByDomain[$name],
+										'TTL' => $ttl,
+										'Type' => $type
+									]
+								]
 							]
-						]
-					]
-				],
-				'HostedZoneId' => $this->hostedZoneId
-			]);
+						],
+						'HostedZoneId' => $this->hostedZoneId
+					]);
+					$successful = true;
+				} catch (\Aws\Route53\Exception\Route53Exception $e) {
+					// Set message to include on exception
+					$addlExceptionInfo .= ' AWS Error: ' . $e->getAwsErrorCode();
+
+					// We'll only handle rate limit exceptions
+					if ($attemptsLeft < 1 || $e->getAwsErrorCode() !== 'Throttling')
+						throw $e;
+
+					// Sleep
+					usleep(random_int(1000000, 10000000));
+				}
+			} while (!$successful);
 		} catch (\Exception $e) {
-			throw new LetsEncryptDNSClientException('Failed to add DNS record.', 0, $e);
+			throw new LetsEncryptDNSClientException('Failed to add DNS record.' . $addlExceptionInfo, 0, $e);
 		}
 	}
 }

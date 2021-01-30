@@ -21,7 +21,7 @@ try
 	$certificate = $leClient->getWildcardSsl($privateKey, $domain, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName);
 	print '----- Certificate -----' . PHP_EOL;
 	print $certificate . PHP_EOL;
-} catch (LetsEncryptDNSClientException $e) {
+} catch (\LetsEncryptDNSClient\LetsEncryptDNSClientException $e) {
 	print $e . PHP_EOL;
 	exit(1);
 }

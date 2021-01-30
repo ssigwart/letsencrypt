@@ -15,5 +15,5 @@ interface DNSProviderInterface
 	 *
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function addDnsValue($type, $name, $value, $ttl);
+	public function addDnsValue(string $type, string $name, string $value, int $ttl): void;
 }

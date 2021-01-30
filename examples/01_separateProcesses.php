@@ -58,7 +58,7 @@ try
 	// Get expiration info
 	$sslInfo = \LetsEncryptDNSClient\LetsEncryptDNSClient::getSSLCertInfo($certificate);
 	print 'Certificate is valid from ' . date('c', $sslInfo['validFrom_time_t']). ' to ' . date('c', $sslInfo['validTo_time_t']) . PHP_EOL;
-} catch (LetsEncryptDNSClientException $e) {
+} catch (\LetsEncryptDNSClient\LetsEncryptDNSClientException $e) {
 	print $e . PHP_EOL;
 	exit(1);
 }
