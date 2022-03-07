@@ -2,6 +2,11 @@
 
 This library implements the `dns-01` challenge type for wildcard domains.
 
+## Install
+```sh
+composer install ssigwart/letsencryptdns
+```
+
 ## Basic Usage
 
 ### Initial Request
