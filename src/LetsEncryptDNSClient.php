@@ -225,26 +225,49 @@ class LetsEncryptDNSClient
 		$this->log('INFO', 'Looking up order.');
 		$orderReadyAttemptsLeft = 30;
 		$orderUrl = $order->orderUrl;
-		do 
+		do
 		{
 			$order = $this->getOrder($orderUrl);
 			if ($order->didOrderFail() || $order->isOrderExpired())
 				throw new LetsEncryptDNSClientException('Order failed with status “' . $order->status . '”.');
 			else if (!$order->isOrderReady())
 			{
-				$orderReadyAttemptsLeft--;
-				if ($orderReadyAttemptsLeft === 0)
-					throw new LetsEncryptDNSClientException('Order failed to transition to ready status. Currently “' . $order->status . '”.');
-				$order = null;
-				sleep(5);
+				// Check if the order is already valid. This might happen if i was already finalized.
+				if ($order->isOrderValid())
+					$this->log('INFO', 'Order is already finalized.');
+				else
+				{
+					$orderReadyAttemptsLeft--;
+					if ($orderReadyAttemptsLeft === 0)
+						throw new LetsEncryptDNSClientException('Order failed to transition to ready status. Currently “' . $order->status . '”.');
+					$this->log('INFO', 'Sleeping while order status is “' . $order->status . '”');
+					$order = null;
+					sleep(5);
+				}
 			}
 		} while ($order === null);
 
 		// Finalize
 		$this->log('INFO', 'Finalizing order.');
-		$finalizedOrder = $this->finalizeOrder($order, $csr);
-		if (!$finalizedOrder->isOrderValid())
-			throw new LetsEncryptDNSClientException('Order status of “' . $finalizedOrder->status . '” is not valid.');
+		$remainingProcessingAttempts = 5;
+		// Finalize the order unless it already has been
+		$finalizedOrder = $order->isOrderValid() ? $order : $this->finalizeOrder($order, $csr);
+		do
+		{
+			if (!$finalizedOrder->isOrderValid())
+			{
+				if ($finalizedOrder->isOrderProcessing() && $remainingProcessingAttempts > 0)
+				{
+					$remainingProcessingAttempts--;
+					$this->log('INFO', 'Order is still processing. Sleeping 10 seconds.');
+					sleep(10);
+					// Get order again
+					$finalizedOrder = $this->getOrder($orderUrl);
+				}
+				else
+					throw new LetsEncryptDNSClientException('Order status of “' . $finalizedOrder->status . '” is not valid.');
+			}
+		} while ($finalizedOrder->isOrderProcessing());
 
 		return $finalizedOrder;
 	}
@@ -265,7 +288,7 @@ class LetsEncryptDNSClient
 		// Check status
 		if (!$order->isOrderValid())
 			throw new LetsEncryptDNSClientException('Order status of “' . $order->status . '” is not valid.');
-		// Checkfor certificate
+		// Check for certificate
 		if ($order->certificateUrl === null)
 			throw new LetsEncryptDNSClientException('Certificate URL not set.');
 
@@ -375,7 +398,7 @@ class LetsEncryptDNSClient
 			$this->log('INFO', 'Waiting for order to be ready.');
 			$order = $this->getOrder($order->orderUrl);
 			if ($order->didOrderFail() || $order->isOrderExpired())
-				throw new LetsEncryptDNSClientException('Order status of “' . $finalizedOrder->status . '” is not valid.');
+				throw new LetsEncryptDNSClientException('Order status of “' . $order->status . '” is not valid.');
 			if (!$order->isOrderValid())
 				sleep(60);
 		}
@@ -522,7 +545,7 @@ class LetsEncryptDNSClient
 	 */
 	public function createCSR(string $privateKey, $commonName, $country, $stateOrProvinceName, $localityName, $organizationName, $organizationalUnitName)
 	{
-		// Check if there are mulitple domains
+		// Check if there are multiple domains
 		$sanDomains = [];
 		if (is_array($commonName))
 		{
@@ -646,7 +669,7 @@ class LetsEncryptDNSClient
 	 * @param string $method HTTP method
 	 * @param string $url URL
 	 * @param int[] $allowedHttpCodes Allowed HTTP response codes
-	 * @param array $headers Reqest Headers (e.g. ['Content-Type: text/plain'])
+	 * @param array $headers Request Headers (e.g. ['Content-Type: text/plain'])
 	 * @param string $requestPayload Request payload
 	 *
 	 * @return string Output
@@ -815,6 +838,14 @@ class LetsEncryptDNSClient
 					'private_key_bits' => 4096,
 					'private_key_type' => OPENSSL_KEYTYPE_RSA
 				]);
+				// Check for error
+				if ($res === false)
+				{
+					$msg = 'Failed to generate private key.';
+					while (($tmp = openssl_error_string()) !== false)
+						$msg .= PHP_EOL . $tmp;
+					throw new LetsEncryptDNSClientException($msg);
+				}
 				openssl_pkey_export($res, $this->jwsPrivateKey);
 				$this->acctInfoProvider->savePrivateKey($this->jwsPrivateKey);
 			}
