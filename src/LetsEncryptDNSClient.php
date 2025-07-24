@@ -1,6 +1,5 @@
 <?php
 
-
 // Based on https://tools.ietf.org/html/draft-ietf-acme-acme-10#section-7.2
 
 namespace LetsEncryptDNSClient;
@@ -180,18 +179,20 @@ class LetsEncryptDNSClient
 	 * Start a new wildcard SSL request.
 	 *
 	 * @param string $domain Domain name
+	 * @param string[] $altDomains Alternative domains
 	 *
 	 * @return LetsEncryptOrder Order
 	 * @throws LetsEncryptDNSClientException
 	 */
-	public function startWildcardSslOrder(string $domain)
+	public function startWildcardSslOrder(string $domain, array $altDomains = [])
 	{
 		$this->setUpDirectory();
 		$this->loadAccountInfo();
 
 		// Request a certificate
 		$this->log('INFO', 'Requesting certificate.');
-		$order = $this->startNewOrder($this->directory['newOrder'], [$domain, '*.' . $domain]);
+		$fullDomainList = [$domain, '*.' . $domain, ...$altDomains];
+		$order = $this->startNewOrder($this->directory['newOrder'], $fullDomainList);
 
 		// Work on authorizations
 		foreach ($order->authorizations as $authUrl)
